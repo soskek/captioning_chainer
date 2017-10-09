@@ -1,5 +1,15 @@
+import sys
+sys.path.append('./coco-caption/')
+sys.path.append('./coco-caption/pycocoevalcap/')
+
+from bleu.bleu import Bleu
+from cider.cider import Cider
+from meteor.meteor import Meteor
+from rouge.rouge import Rouge
+
 import collections
 import io
+import os
 
 import numpy as np
 
@@ -56,9 +66,10 @@ def convert(batch, device):
             batch_dev = xp.split(concat_dev, sections)
             return batch_dev
 
-    vecs, sentences = zip(*batch)
+    vecs, sentences, others = zip(*batch)
     return {'xs': to_device_batch(list(vecs)),
-            'ys': to_device_batch(list(sentences))}
+            'ys': to_device_batch(list(sentences)),
+            'others': list(others)}
 
 
 class PartialNpzDeserializer(serializer.Deserializer):
@@ -128,3 +139,83 @@ def load_npz_partially(filename, obj, strict=True, target_words=[]):
     with np.load(filename) as f:
         d = PartialNpzDeserializer(f, strict=strict, target_words=target_words)
         d.load(obj)
+
+
+class SentenceEvaluaterUnit(object):
+    def __init__(self, references,
+                 scorers=['bleu', 'rouge', 'cider', 'meteor']):
+        self.scorers = {}
+        for scorer in scorers:
+            if scorer == 'bleu':
+                self.scorers['bleu'] = Bleu(4)
+            elif scorer == 'rouge':
+                self.scorers['rouge'] = Rouge()
+            elif scorer == 'cider':
+                self.scorers['cider'] = Cider()
+            elif scorer == 'meteor':
+                self.scorers['meteor'] = Meteor()
+            else:
+                raise NotImplementedError()
+        self.references = references
+
+    def __call__(self, predictions):
+        results = {}
+        for name, scorer in self.scorers.items():
+            score, _ = scorer.compute_score(
+                self.references, predictions)
+            if name == 'bleu':
+                score = score[-1]
+            results[name] = score
+        return results
+
+
+def arrange_test_dataset(dataset, vocab):
+    inputs = []
+    references = collections.defaultdict(list)
+    unk = vocab['<unk>']
+    for data in dataset:
+        vec, sentence, other = data
+        img_id = other['img_id']
+        inputs.append([img_id, vec])
+        target = sentence[1:-1]  # remove bos and eos
+        # make unk impossible to match
+        target = [wi if wi != unk else -1
+                  for wi in target]
+        target = ' '.join(str(wi) for wi in target)
+        references[img_id].append(target)
+    assert(set([i[0] for i in inputs]) == set(references.keys()))
+    return inputs, references
+
+
+class SentenceEvaluater(chainer.training.Extension):
+
+    priority = chainer.training.PRIORITY_WRITER
+
+    def __init__(self, model, test_data, vocab, base_key,
+                 batch=100, device=-1):
+        self.model = model
+        self.inputs, self.references = arrange_test_dataset(test_data, vocab)
+        self.evaluater = SentenceEvaluaterUnit(self.references)
+        self.base_key = base_key
+        self.batch = batch
+        self.device = device
+
+    def __call__(self, trainer):
+        with chainer.no_backprop_mode():
+            predictions = {}
+            for i in range(0, len(self.inputs), self.batch):
+                img_ids, vecs = zip(*self.inputs[i:i + self.batch])
+
+                vecs = [chainer.dataset.to_device(self.device, x)
+                        for x in vecs]
+                results = self.model.decode(vecs, k=20)
+                for img_id, result in zip(img_ids, results):
+                    outs = result['outs']
+                    while self.model.eos_id in outs:
+                        outs.remove(self.model.eos_id)
+                    outs = ' '.join(str(wi) for wi in outs)
+                    predictions[img_id] = [outs]
+
+        score_results = self.evaluater(predictions)
+        for name, score in score_results.items():
+            chainer.report({os.path.join(self.base_key, name): score})

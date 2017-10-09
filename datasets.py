@@ -52,13 +52,14 @@ def load_caption_dataset(vocab, directory, split):
         this_split = cap_set['split']
         img_id = cap_set['imgid']
         sentences = cap_set['sentences']
+        other = {'img_id': img_id}
         if this_split == split:
             img_vec = vecs[img_id]
             for sent in sentences:
                 tokens = sent['tokens']
                 sent_array = utils.make_array(
                     tokens, vocab, add_eos=True, add_bos=True)
-                dataset.append((img_vec, sent_array))
+                dataset.append((img_vec, sent_array, other))
     return dataset
 
 

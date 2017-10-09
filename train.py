@@ -47,6 +47,7 @@ def main():
     directory = datasets.get_default_dataset_path(args.dataset)
     train, valid = datasets.get_caption_dataset(
         vocab, directory, ['train', 'val'])
+    valid = valid[:20]
 
     print('# train', len(train))
     print('# valid', len(valid))
@@ -93,7 +94,6 @@ def main():
 
     print('       extensions')
     iter_per_epoch = len(train) // args.batchsize
-    # log_trigger = (iter_per_epoch // 2, 'iteration')
     log_trigger = (iter_per_epoch // 2, 'iteration')
     eval_trigger = (log_trigger[0] * 2, 'iteration')  # every 1 epoch
 
@@ -101,6 +101,11 @@ def main():
         valid_iter, model,
         converter=utils.convert, device=args.gpu,
         eval_func=model.evaluate),
+        trigger=eval_trigger)
+
+    trainer.extend(utils.SentenceEvaluater(
+        model, valid, vocab,
+        'val/', device=args.gpu),
         trigger=eval_trigger)
 
     record_trigger = training.triggers.MaxValueTrigger(
@@ -116,6 +121,10 @@ def main():
         ['epoch', 'iteration',
          'main/perp', 'validation/main/perp',
          'main/acc', 'validation/main/acc',
+         'val/bleu',
+         'val/rouge',
+         'val/cider',
+         'val/meteor',
          'elapsed_time']),
         trigger=log_trigger)
 

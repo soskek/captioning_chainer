@@ -42,8 +42,8 @@ def get_topk(output, k=20):
     batchsize, n_out = output.shape
     xp = cuda.get_array_module(output)
     argsort = xp.argsort(output, axis=1)
-    argtopk = argsort[:, ::-1][:k]
-    assert(argtopk.shape == (batchsize, k))
+    argtopk = argsort[:, ::-1][:, :k]
+    assert(argtopk.shape == (batchsize, k)), (argtopk.shape, (batchsize, k))
     topk_score = output.take(
         argtopk + xp.arange(batchsize)[:, None] * n_out)
     return argtopk, topk_score
@@ -74,7 +74,7 @@ def update_beam_state(state, topk, topk_score, h, c, eos_id):
             end = state[beam_i]['end']
             outs = state[beam_i]['outs'] + ([y] if not end else [])
             next_state[len(next_state)] = {
-                'instane_i': instance_i,
+                'instance_i': instance_i,
                 'outs': outs,
                 'score': score,
                 'end': y == eos_id or end
@@ -129,10 +129,10 @@ class RNNDecoder(chainer.Chain):
         self.eos_id = eos_id
         self.max_decode_length = 40
 
-    def __call__(self, xs, ys):
-        return self.calculate_loss(xs, ys)
+    def __call__(self, xs, ys, others):
+        return self.calculate_loss(xs, ys, others)
 
-    def calculate_loss(self, xs, ys):
+    def calculate_loss(self, xs, ys, others):
         h, c = self.prepare(xs)
         input_ys = [y[:-1] for y in ys]
         target_ys = [y[1:] for y in ys]
@@ -151,7 +151,7 @@ class RNNDecoder(chainer.Chain):
     def evaluate(self, *args, **kargs):
         return self.calculate_loss(*args, **kargs)
 
-    def decode(self, xs):
+    def decode(self, xs, k=20):
         batchsize = len(xs)
         state = {i: {'instance_i': i, 'outs': [], 'score': 0., 'end': False}
                  for i in range(batchsize)}
@@ -165,7 +165,8 @@ class RNNDecoder(chainer.Chain):
 
             concat_h = F.concat(hs, axis=0)
             concat_output = self.output(concat_h)
-            topk, topk_score = get_topk(F.log_softmax(concat_output).data)
+            topk, topk_score = get_topk(
+                F.log_softmax(concat_output).data, k=20)
 
             state, input_ys, h, c = update_beam_state(
                 state, topk, topk_score, h, c, self.eos_id)
