@@ -41,7 +41,7 @@ def main():
     print(json.dumps(args.__dict__, indent=2))
 
     print('read vocab')
-    vocab = utils.read_vocab(args.vocab)
+    vocab = json.load(open(args.vocab))
 
     print('read dataset')
     directory = datasets.get_default_dataset_path(args.dataset)

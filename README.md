@@ -4,7 +4,7 @@ Sentence Generation from Vector (image, video, feature, ...)
 # Train an Image Caption Generator
 
 ```
-sh prepare_dataset.sh
+sh prepare_scripts/prepare_dataset.sh
 ```
 
 ```

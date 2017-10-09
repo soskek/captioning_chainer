@@ -20,7 +20,8 @@ def get_default_dataset_path(dataset):
         raise NotImplementedError()
 
 
-def construct_vocab(directory, max_vocab_size=50000, min_freq=5):
+def construct_vocab(directory, max_vocab_size=50000, min_freq=5,
+                    with_count=False):
     counts = collections.defaultdict(int)
     caption_path = os.path.join(directory, 'dataset.json')
     caption_dataset = json.load(open(caption_path))['images']
@@ -38,7 +39,10 @@ def construct_vocab(directory, max_vocab_size=50000, min_freq=5):
         if len(vocab) >= max_vocab_size or c < min_freq:
             break
         vocab[w] = len(vocab)
-    return vocab
+    if with_count:
+        return vocab, dict(counts)
+    else:
+        return vocab
 
 
 def load_caption_dataset(vocab, directory, split):
