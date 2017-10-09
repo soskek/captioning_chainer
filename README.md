@@ -10,3 +10,9 @@ sh prepare_scripts/prepare_dataset.sh
 ```
 python -u train.py -g -1 --vocab data/flickr8k/vocab.txt --dataset flickr8k -b 32
 ```
+
+# Use the model
+
+```
+python interactive.py --resume result/best_model.npz --vocab data/flickr8k/vocab.txt
+```
