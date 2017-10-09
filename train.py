@@ -37,6 +37,7 @@ def main():
     parser.add_argument('--resume')
     parser.add_argument('--resume-rnn')
     parser.add_argument('--resume-wordemb')
+    parser.add_argument('--init-output-by-embed', action='store_true')
     args = parser.parse_args()
     print(json.dumps(args.__dict__, indent=2))
 
@@ -78,6 +79,9 @@ def main():
         print('load Word Embedding model', args.resume_wordemb)
         utils.load_npz_partially(args.resume_wordemb, model,
                                  target_words=['embed/'])
+    if args.init_output_by_embed:
+        print('copy Word Embedding to Output Matrix')
+        model.output.W.data[:] = model.embed.W.data
 
     print('       iterator')
     model.xp.random.seed(777)
