@@ -201,7 +201,7 @@ class SentenceEvaluater(chainer.training.Extension):
         self.device = device
 
     def __call__(self, trainer):
-        with chainer.no_backprop_mode():
+        with chainer.no_backprop_mode(), chainer.using_config('train', False):
             predictions = {}
             for i in range(0, len(self.inputs), self.batch):
                 img_ids, vecs = zip(*self.inputs[i:i + self.batch])
