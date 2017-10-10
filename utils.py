@@ -184,7 +184,7 @@ def arrange_test_dataset(dataset, vocab):
         target = ' '.join(str(wi) for wi in target)
         references[img_id].append(target)
     assert(set(inputs.keys()) == set(references.keys()))
-    inputs = [iv for iv in inputs.items()]
+    inputs = [iv for iv in sorted(inputs.items(), key=lambda x:x[0])]
     return inputs, references
 
 
@@ -193,7 +193,8 @@ class SentenceEvaluater(chainer.training.Extension):
     priority = chainer.training.PRIORITY_WRITER
 
     def __init__(self, model, test_data, vocab, base_key,
-                 batchsize=100, device=-1, k=20):
+                 batchsize=100, device=-1, k=20,
+                 print_sentence_mod=None):
         self.model = model
         self.inputs, self.references = arrange_test_dataset(test_data, vocab)
         self.evaluater = SentenceEvaluaterUnit(self.references)
@@ -201,23 +202,35 @@ class SentenceEvaluater(chainer.training.Extension):
         self.batchsize = batchsize
         self.device = device
         self.k = k
+        self.vocab = vocab
+        self.rev_vocab = {i: w for w, i in vocab.items()}
+        self.print_sentence_mod = print_sentence_mod
 
     def __call__(self, trainer):
         with chainer.no_backprop_mode(), chainer.using_config('train', False):
             predictions = {}
+            if self.print_sentence_mod is not None:
+                print('\n')
             for i in range(0, len(self.inputs), self.batchsize):
                 img_ids, vecs = zip(*self.inputs[i:i + self.batchsize])
 
                 vecs = [x for x in chainer.dataset.to_device(
                     self.device, np.stack(vecs))]
+
                 results = self.model.decode(vecs, k=self.k)
                 for img_id, result in zip(img_ids, results):
                     outs = result['outs']
                     while self.model.eos_id in outs:
                         outs.remove(self.model.eos_id)
-                    outs = ' '.join(str(wi) for wi in outs)
-                    predictions[img_id] = [outs]
+                    outs_str = ' '.join(str(wi) for wi in outs)
+                    predictions[img_id] = [outs_str]
 
+                    if self.print_sentence_mod is not None:
+                        if img_id % self.print_sentence_mod == 0:
+                            print('\t#GEN {}: ({:.3f}) {}'.format(
+                                img_id, float(result['score']),
+                                ' '.join(self.rev_vocab[wi] for wi in outs)))
         score_results = self.evaluater(predictions)
         for name, score in score_results.items():
+            score *= 100.
             chainer.report({os.path.join(self.base_key, name): score})

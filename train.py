@@ -17,9 +17,9 @@ def main():
     parser = argparse.ArgumentParser(description='Image Comprehension')
     parser.add_argument('--batchsize', '-b', type=int, default=64,
                         help='Number of images in each mini-batch')
-    parser.add_argument('--learnrate', '-l', type=float, default=5e-4,
+    parser.add_argument('--learnrate', '-l', type=float, default=1e-4,
                         help='Learning rate')
-    parser.add_argument('--epoch', '-e', type=int, default=300,
+    parser.add_argument('--epoch', '-e', type=int, default=50,
                         help='Number of sweeps over the dataset to train')
     parser.add_argument('--unit', '-u', type=int, default=512,
                         help='Number of units')
@@ -35,6 +35,7 @@ def main():
     parser.add_argument('--dataset', default='mscoco',
                         choices=['mscoco', 'flickr8k', 'flickr30k'])
     parser.add_argument('--beam', type=int, default=5)
+    parser.add_argument('--print-sentence-mod', type=int, default=200)
     parser.add_argument('--resume')
     parser.add_argument('--resume-rnn')
     parser.add_argument('--resume-wordemb')
@@ -100,7 +101,7 @@ def main():
 
     print('       extensions')
     iter_per_epoch = len(train) // args.batchsize
-    log_trigger = (iter_per_epoch // 2, 'iteration')
+    log_trigger = (iter_per_epoch // 1, 'iteration')
     eval_trigger = (log_trigger[0] * 2, 'iteration')  # every 1 epoch
 
     trainer.extend(extensions.Evaluator(
@@ -113,11 +114,12 @@ def main():
         model, valid, vocab, 'val/',
         batchsize=args.batchsize,
         device=args.gpu,
-        k=args.beam),
+        k=args.beam,
+        print_sentence_mod=args.print_sentence_mod),
         trigger=eval_trigger)
 
     record_trigger = training.triggers.MaxValueTrigger(
-        'validation/main/acc',
+        'val/blue',
         trigger=eval_trigger)
     trainer.extend(extensions.snapshot_object(
         model, 'best_model.npz'),

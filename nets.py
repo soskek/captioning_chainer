@@ -60,7 +60,16 @@ def update_beam_state(outs, total_score, topk, topk_score, h, c, eos_id):
     if total_score is None:
         total_score = topk_score
     else:
-        total_score = total_score[:, None] + topk_score
+        is_end = xp.max(outs == eos_id, axis=1)
+        is_end = xp.broadcast_to(is_end[:, None], topk_score.shape)
+        bias = xp.zeros_like(topk_score, numpy.float32)
+        bias[:, 1:] = -10000.  # remove ended cands except for a consequence
+        total_score = xp.where(
+            is_end,
+            total_score[:, None] + bias,
+            total_score[:, None] + topk_score)
+        assert(xp.all(total_score < 0.))
+        topk = xp.where(is_end, eos_id, topk)  # this is not required
     total_score = total_score.reshape((prev_full // prev_k, prev_k * k))
     argtopk, total_topk_score = get_topk(total_score, k=k)
     assert(argtopk.shape == (prev_full // prev_k, k))
@@ -73,7 +82,7 @@ def update_beam_state(outs, total_score, topk, topk_score, h, c, eos_id):
     hs = F.separate(h, axis=1)
     cs = F.separate(c, axis=1)
 
-    argtopk = argtopk % prev_k + \
+    argtopk = argtopk // k + \
         xp.arange(prev_full // prev_k)[:, None] * prev_k
 
     argtopk = argtopk.reshape((full, )).tolist()
@@ -103,7 +112,7 @@ def finish_beam(outs, total_score, batchsize, eos_id):
 
     result_batch = [
         result for i, result in
-        sorted(result_batch.items(), key=lambda x:x[0])]
+        sorted(result_batch.items(), key=lambda x: x[0])]
     return result_batch
 
 
@@ -171,10 +180,15 @@ class RNNDecoder(chainer.Chain):
             concat_output = self.output(concat_h)
             topk, topk_score = get_topk(
                 F.log_softmax(concat_output).data, k=k)
+            assert(self.xp.all(topk_score < 0.))
 
             outs, total_score, h, c = update_beam_state(
                 outs, total_score, topk, topk_score, h, c, self.eos_id)
+            assert(self.xp.all(total_score < 0.)), i
             input_ys = self.xp.split(outs[:, -1], outs.shape[0], axis=0)
+            if self.xp.max(outs == self.eos_id, axis=1).sum() == outs.shape[0]:
+                # all cands meet eos, end
+                break
         result = finish_beam(outs, total_score, batchsize, self.eos_id)
         return result
 
