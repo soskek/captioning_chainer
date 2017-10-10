@@ -170,20 +170,21 @@ class SentenceEvaluaterUnit(object):
 
 
 def arrange_test_dataset(dataset, vocab):
-    inputs = []
+    inputs = {}
     references = collections.defaultdict(list)
     unk = vocab['<unk>']
     for data in dataset:
         vec, sentence, other = data
         img_id = other['img_id']
-        inputs.append([img_id, vec])
+        inputs[img_id] = vec
         target = sentence[1:-1]  # remove bos and eos
         # make unk impossible to match
         target = [wi if wi != unk else -1
                   for wi in target]
         target = ' '.join(str(wi) for wi in target)
         references[img_id].append(target)
-    assert(set([i[0] for i in inputs]) == set(references.keys()))
+    assert(set(inputs.keys()) == set(references.keys()))
+    inputs = [iv for iv in inputs.items()]
     return inputs, references
 
 
@@ -192,23 +193,24 @@ class SentenceEvaluater(chainer.training.Extension):
     priority = chainer.training.PRIORITY_WRITER
 
     def __init__(self, model, test_data, vocab, base_key,
-                 batch=100, device=-1):
+                 batchsize=100, device=-1, k=20):
         self.model = model
         self.inputs, self.references = arrange_test_dataset(test_data, vocab)
         self.evaluater = SentenceEvaluaterUnit(self.references)
         self.base_key = base_key
-        self.batch = batch
+        self.batchsize = batchsize
         self.device = device
+        self.k = k
 
     def __call__(self, trainer):
         with chainer.no_backprop_mode(), chainer.using_config('train', False):
             predictions = {}
-            for i in range(0, len(self.inputs), self.batch):
-                img_ids, vecs = zip(*self.inputs[i:i + self.batch])
+            for i in range(0, len(self.inputs), self.batchsize):
+                img_ids, vecs = zip(*self.inputs[i:i + self.batchsize])
 
-                vecs = [chainer.dataset.to_device(self.device, x)
-                        for x in vecs]
-                results = self.model.decode(vecs, k=20)
+                vecs = [x for x in chainer.dataset.to_device(
+                    self.device, np.stack(vecs))]
+                results = self.model.decode(vecs, k=self.k)
                 for img_id, result in zip(img_ids, results):
                     outs = result['outs']
                     while self.model.eos_id in outs:

@@ -49,53 +49,58 @@ def get_topk(output, k=20):
     return argtopk, topk_score
 
 
-def update_beam_state(state, topk, topk_score, h, c, eos_id):
-    # {beam_i: {'instance_i': instance_i, 'outs': [],
-    #           'score': 0., 'end': False}, ...}
+def update_beam_state(outs, total_score, topk, topk_score, h, c, eos_id):
     xp = cuda.get_array_module(h)
-    k = topk.shape[1]
-    middle = collections.defaultdict(list)
-    next_state = {}
-    next_hs = []
-    next_cs = []
-    input_ys = []
-    for beam_i, st in state.items():
-        if st['end']:
-            middle[st['instance_i']].append(
-                [beam_i, st['outs'][-1], st['score']])
-        else:
-            scores = st['score'] + topk_score[beam_i]
-            for y, score in zip(topk[beam_i], scores):
-                middle[st['instance_i']].append([beam_i, y, score])
+    full = outs.shape[0]
+    prev_full, k = topk.shape
+    batch = full // k
+    prev_k = prev_full // batch
+    assert(prev_k in [1, k])
 
-    for instance_i, cands in middle.items():
-        topk_cands = sorted(cands, key=lambda x: -x[-1])[:k]
-        for beam_i, y, score in topk_cands:
-            end = state[beam_i]['end']
-            outs = state[beam_i]['outs'] + ([y] if not end else [])
-            next_state[len(next_state)] = {
-                'instance_i': instance_i,
-                'outs': outs,
-                'score': score,
-                'end': y == eos_id or end
-            }
-            # first axis = i-th layer
-            next_hs.append(h[:, beam_i])
-            next_cs.append(c[:, beam_i])
-            input_ys.append(xp.array([y], 'i'))
-    next_h = F.stack(next_hs, axis=1)
-    next_c = F.stack(next_cs, axis=1)
-    return next_state, input_ys, next_h, next_c
+    if total_score is None:
+        total_score = topk_score
+    else:
+        total_score = total_score[:, None] + topk_score
+    total_score = total_score.reshape((prev_full // prev_k, prev_k * k))
+    argtopk, total_topk_score = get_topk(total_score, k=k)
+    assert(argtopk.shape == (prev_full // prev_k, k))
+    assert(total_topk_score.shape == (prev_full // prev_k, k))
+    total_topk = topk.take(
+        argtopk + xp.arange(prev_full // prev_k)[:, None] * prev_k * k)
+    total_topk = total_topk.reshape((full, ))
+    total_topk_score = total_topk_score.reshape((full, ))
+
+    hs = F.separate(h, axis=1)
+    cs = F.separate(c, axis=1)
+
+    argtopk = argtopk % prev_k + \
+        xp.arange(prev_full // prev_k)[:, None] * prev_k
+
+    argtopk = argtopk.reshape((full, )).tolist()
+
+    next_h = F.stack([hs[i] for i in argtopk], axis=1)
+    next_c = F.stack([cs[i] for i in argtopk], axis=1)
+    outs = xp.stack([outs[i] for i in argtopk], axis=0)
+
+    outs = xp.concatenate([outs, total_topk[:, None]],
+                          axis=1).astype(numpy.int32)
+
+    return outs, total_topk_score, next_h, next_c
 
 
-def finish_beam(state):
+def finish_beam(outs, total_score, batchsize, eos_id):
+    k = outs.shape[0] // batchsize
     result_batch = collections.defaultdict(
         lambda: {'outs': [], 'score': -1e8})
-    for beam_i, st in state.items():
-        instance_i = st['instance_i']
-        if result_batch[instance_i]['score'] < st['score']:
-            result_batch[instance_i] = {
-                'outs': st['outs'], 'score': st['score']}
+    for i in range(batchsize):
+        for j in range(k):
+            score = total_score[i * k + j]
+            if result_batch[i]['score'] < score:
+                out = outs[i * k + j].tolist()
+                if eos_id in out:
+                    out = out[:out.index(eos_id)]
+                result_batch[i] = {'outs': out, 'score': score}
+
     result_batch = [
         result for i, result in
         sorted(result_batch.items(), key=lambda x:x[0])]
@@ -153,12 +158,11 @@ class RNNDecoder(chainer.Chain):
 
     def decode(self, xs, k=20):
         batchsize = len(xs)
-        state = {i: {'instance_i': i, 'outs': [], 'score': 0., 'end': False}
-                 for i in range(batchsize)}
-
         # TODO: "encode image" option, using VGG
         h, c = self.prepare(xs)
         input_ys = [self.xp.array([self.eos_id], 'i')] * batchsize
+        outs = self.xp.array([[]] * batchsize * k, 'i')
+        total_score = None
         for i in range(self.max_decode_length):
             es = sequence_embed(self.embed, input_ys, 0)
             h, c, hs = self.rnn(h, c, es)
@@ -166,11 +170,12 @@ class RNNDecoder(chainer.Chain):
             concat_h = F.concat(hs, axis=0)
             concat_output = self.output(concat_h)
             topk, topk_score = get_topk(
-                F.log_softmax(concat_output).data, k=20)
+                F.log_softmax(concat_output).data, k=k)
 
-            state, input_ys, h, c = update_beam_state(
-                state, topk, topk_score, h, c, self.eos_id)
-        result = finish_beam(state)
+            outs, total_score, h, c = update_beam_state(
+                outs, total_score, topk, topk_score, h, c, self.eos_id)
+            input_ys = self.xp.split(outs[:, -1], outs.shape[0], axis=0)
+        result = finish_beam(outs, total_score, batchsize, self.eos_id)
         return result
 
     def prepare(self, xs):

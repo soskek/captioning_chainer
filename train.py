@@ -34,6 +34,7 @@ def main():
                         help='Directory to output the result')
     parser.add_argument('--dataset', default='mscoco',
                         choices=['mscoco', 'flickr8k', 'flickr30k'])
+    parser.add_argument('--beam', type=int, default=5)
     parser.add_argument('--resume')
     parser.add_argument('--resume-rnn')
     parser.add_argument('--resume-wordemb')
@@ -48,10 +49,11 @@ def main():
     directory = datasets.get_default_dataset_path(args.dataset)
     train, valid = datasets.get_caption_dataset(
         vocab, directory, ['train', 'val'])
-    valid = valid[:20]
 
     print('# train', len(train))
     print('# valid', len(valid))
+    # this number is the number of references
+    # it shuld be the number of images
 
     print('setup model')
     np.random.seed(777)
@@ -108,8 +110,10 @@ def main():
         trigger=eval_trigger)
 
     trainer.extend(utils.SentenceEvaluater(
-        model, valid, vocab,
-        'val/', device=args.gpu),
+        model, valid, vocab, 'val/',
+        batchsize=args.batchsize,
+        device=args.gpu,
+        k=args.beam),
         trigger=eval_trigger)
 
     record_trigger = training.triggers.MaxValueTrigger(
@@ -124,7 +128,7 @@ def main():
     trainer.extend(extensions.PrintReport(
         ['epoch', 'iteration',
          'main/perp', 'validation/main/perp',
-         'main/acc', 'validation/main/acc',
+         # 'main/acc', 'validation/main/acc',
          'val/bleu',
          'val/rouge',
          'val/cider',
@@ -147,6 +151,7 @@ def main():
     print('log_trigger ', log_trigger)
     print('eval_trigger', eval_trigger)
     print('START training. # iter/epoch=', iter_per_epoch)
+
     trainer.run()
 
 
