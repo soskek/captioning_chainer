@@ -119,7 +119,7 @@ def main():
         trigger=eval_trigger)
 
     record_trigger = training.triggers.MaxValueTrigger(
-        'val/blue',
+        'val/bleu',
         trigger=eval_trigger)
     trainer.extend(extensions.snapshot_object(
         model, 'best_model.npz'),
