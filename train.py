@@ -19,12 +19,12 @@ def main():
                         help='Number of images in each mini-batch')
     parser.add_argument('--learnrate', '-l', type=float, default=1e-4,
                         help='Learning rate')
-    parser.add_argument('--epoch', '-e', type=int, default=50,
+    parser.add_argument('--epoch', '-e', type=int, default=40,
                         help='Number of sweeps over the dataset to train')
     parser.add_argument('--unit', '-u', type=int, default=512,
                         help='Number of units')
     parser.add_argument('--layer', type=int, default=1)
-    parser.add_argument('--dropout', '-d', type=float, default=0.2,
+    parser.add_argument('--dropout', '-d', type=float, default=0.3,
                         help='Dropout rate for MLP')
     parser.add_argument('--gpu', '-g', type=int, default=0,
                         help='GPU ID (negative value indicates CPU)')
@@ -102,7 +102,7 @@ def main():
     print('       extensions')
     iter_per_epoch = len(train) // args.batchsize
     log_trigger = (iter_per_epoch // 1, 'iteration')
-    eval_trigger = (log_trigger[0] * 2, 'iteration')  # every 1 epoch
+    eval_trigger = (log_trigger[0] * 1, 'iteration')  # every 1 epoch
 
     trainer.extend(extensions.Evaluator(
         valid_iter, model,
