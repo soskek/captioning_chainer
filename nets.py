@@ -120,7 +120,7 @@ class RNNDecoder(chainer.Chain):
 
     """A LSTM-RNN Decoder with Word Embedding.
 
-    This model encodes a sentence sequentially using LSTM.
+    This model decodes a sentence sequentially using LSTM.
 
     Args:
         n_layers (int): The number of LSTM layers.
