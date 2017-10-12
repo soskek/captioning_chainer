@@ -79,18 +79,16 @@ def update_beam_state(outs, total_score, topk, topk_score, h, c, eos_id):
     total_topk = total_topk.reshape((full, ))
     total_topk_score = total_topk_score.reshape((full, ))
 
-    hs = F.separate(h, axis=1)
-    cs = F.separate(c, axis=1)
-
     argtopk = argtopk // k + \
         xp.arange(prev_full // prev_k)[:, None] * prev_k
-
     argtopk = argtopk.reshape((full, )).tolist()
 
+    hs = F.separate(h, axis=1)
+    cs = F.separate(c, axis=1)
     next_h = F.stack([hs[i] for i in argtopk], axis=1)
     next_c = F.stack([cs[i] for i in argtopk], axis=1)
-    outs = xp.stack([outs[i] for i in argtopk], axis=0)
 
+    outs = xp.stack([outs[i] for i in argtopk], axis=0)
     outs = xp.concatenate([outs, total_topk[:, None]],
                           axis=1).astype(numpy.int32)
 
@@ -130,7 +128,8 @@ class RNNDecoder(chainer.Chain):
 
     """
 
-    def __init__(self, n_layers, n_vocab, n_units, dropout=0.5, eos_id=0):
+    def __init__(self, n_layers, n_vocab, n_units,
+                 dropout=0.5, eos_id=0, max_decode_length=40):
         super(RNNDecoder, self).__init__(
             transform=L.Linear(None, n_units),
             embed=L.EmbedID(n_vocab, n_units),
@@ -141,7 +140,7 @@ class RNNDecoder(chainer.Chain):
         self.n_units = n_units
         self.dropout = dropout
         self.eos_id = eos_id
-        self.max_decode_length = 40
+        self.max_decode_length = max_decode_length
 
     def __call__(self, xs, ys, others):
         return self.calculate_loss(xs, ys, others)
@@ -167,7 +166,6 @@ class RNNDecoder(chainer.Chain):
 
     def decode(self, xs, k=20):
         batchsize = len(xs)
-        # TODO: "encode image" option, using VGG
         h, c = self.prepare(xs)
         input_ys = [self.xp.array([self.eos_id], 'i')] * batchsize
         outs = self.xp.array([[]] * batchsize * k, 'i')
