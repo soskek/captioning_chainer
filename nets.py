@@ -180,7 +180,7 @@ class RNNDecoder(chainer.Chain):
             concat_output = self.output(concat_h)
             topk, topk_score = get_topk(
                 F.log_softmax(concat_output).data, k=k)
-            assert(self.xp.all(topk_score < 0.))
+            assert(self.xp.all(topk_score <= 0.))
 
             outs, total_score, h, c = update_beam_state(
                 outs, total_score, topk, topk_score, h, c, self.eos_id)
