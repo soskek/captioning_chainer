@@ -4,6 +4,15 @@ A Chainer implementation of [Neural Image Caption](https://www.cv-foundation.org
 
 This implementation is fast, because it uses cudnn-based LSTM (NStepLSTM) and beam search can deal with batch processing.
 
+This code uses the [coco-caption](https://github.com/tylin/coco-caption) as a submodule.
+So, please clone this repository as follows:
+```
+git clone --recursive https://github.com/soskek/captioning_chainer.git
+```
+
+Furthermore, the [coco-caption](https://github.com/tylin/coco-caption) works on python 2.7 only. Thus, this repository also follows it.
+
+
 ## Train an Image Caption Generator
 
 ```
@@ -11,7 +20,10 @@ sh prepare_scripts/prepare_dataset.sh
 ```
 
 ```
+# flickr8k, flickr30k, mscoco
 python -u train.py -g 0 --vocab data/flickr8k/vocab.txt --dataset flickr8k -b 64
+python -u train.py -g 0 --vocab data/flickr30k/vocab.txt --dataset flickr30k -b 64
+python -u train.py -g 0 --vocab data/coco/vocab.txt --dataset mscoco -b 64
 ```
 
 ## Use the model
