@@ -26,6 +26,9 @@ python -u train.py -g 0 --vocab data/flickr30k/vocab.txt --dataset flickr30k -b 
 python -u train.py -g 0 --vocab data/coco/vocab.txt --dataset mscoco -b 64
 ```
 
+On the mscoco dataset, with beam size of 20, a trained model reached BELU 25.9.
+The paper uses ensemble and (unwritten) hyperparameters, which can cause the gap between this and the value reported in the paper.
+
 ## Use the model
 
 ```
